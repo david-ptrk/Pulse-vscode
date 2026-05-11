@@ -1,0 +1,25 @@
+{
+  "name": "pulse-vscode",
+  "displayName": "Pulse-vscode",
+  "description": "Syntax highlighting and IntelliSense for the Pulse programming language",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.118.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "pulse",
+      "aliases": ["Pulse", "pulse"],
+      "extensions": [".pul"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "pulse",
+      "scopeName": "source.pulse",
+      "path": "./syntaxes/pulse.tmLanguage.json"
+    }]
+  }
+}
