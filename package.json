@@ -1,6 +1,6 @@
 {
   "name": "pulse-vscode",
-  "displayName": "Pulse-vscode",
+  "displayName": "Pulse Language",
   "description": "Syntax highlighting and IntelliSense for the Pulse programming language",
   "version": "0.0.1",
   "engines": {

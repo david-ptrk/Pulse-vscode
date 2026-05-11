@@ -2,19 +2,75 @@
 	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
 	"name": "Pulse",
 	"patterns": [
-		{
-			"include": "#keywords"
-		},
-		{
-			"include": "#strings"
-		}
+		{ "include": "#keywords" },
+		{ "include": "#constants" },
+		{ "include": "#numbers" },
+		{ "include": "#strings" }
 	],
 	"repository": {
 		"keywords": {
-			"patterns": [{
-				"name": "keyword.control.pulse",
-				"match": "\\b(if|while|for|return)\\b"
-			}]
+			"patterns": [
+				{
+					"name": "keyword.control.pulse",
+					"match": "\\b(if|elif|else|while|for|break|continue|pass|return|match|case)\\b"
+				},
+				{
+					"name": "keyword.control.exception.pulse",
+					"match": "\\b(try|except|finally|raise)\\b"
+				},
+				{
+					"name": "keyword.other.pulse",
+					"match": "\\b(import|from|as|del|in|is)\\b"
+				},
+				{
+					"name": "storage.type.function.pulse",
+					"match": "\\bdef\\b"
+				},
+				{
+					"name": "storage.type.class.pulse",
+					"match": "\\bclass\\b"
+				},
+				{
+					"name": "storage.modifier.pulse",
+					"match": "\\bstatic\\b"
+				},
+				{
+					"name": "variable.language.self.pulse",
+					"match": "\\bself\\b"
+				},
+				{
+					"name": "keyword.operator.word.pulse",
+					"match": "\\b(and|or|not)\\b"
+				},
+				{
+					"name": "keyword.other.pulse",
+					"match": "\\b(lambda|dot|transpose)\\b"
+				}
+			]
+		},
+		"constants": {
+			"patterns": [
+				{
+					"name": "constant.language.boolean.pulse",
+					"match": "\\b(True|False)\\b"
+				},
+				{
+					"name": "constant.language.null.pulse",
+					"match": "\\b(null|None)\\b"
+				}
+			]
+		},
+		"numbers": {
+			"patterns": [
+				{
+					"name": "constant.numeric.float.pulse",
+					"match": "\\b\\d+\\.\\d*([eE][+-]?\\d+)?\\b"
+				},
+				{
+					"name": "constant.numeric.integer.pulse",
+					"match": "\\b\\d+\\b"
+				}
+			]
 		},
 		"strings": {
 			"name": "string.quoted.double.pulse",
