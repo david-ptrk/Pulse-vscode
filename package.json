@@ -3,6 +3,13 @@
   "displayName": "Pulse Language",
   "description": "Syntax highlighting and IntelliSense for the Pulse programming language",
   "version": "0.0.1",
+  
+  "main": "./out/extension.js",
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  
   "engines": {
     "vscode": "^1.118.0"
   },
@@ -10,16 +17,30 @@
     "Programming Languages"
   ],
   "contributes": {
-    "languages": [{
-      "id": "pulse",
-      "aliases": ["Pulse", "pulse"],
-      "extensions": [".pul"],
-      "configuration": "./language-configuration.json"
-    }],
-    "grammars": [{
-      "language": "pulse",
-      "scopeName": "source.pulse",
-      "path": "./syntaxes/pulse.tmLanguage.json"
-    }]
+    "languages": [
+      {
+        "id": "pulse",
+        "aliases": [
+          "Pulse",
+          "pulse"
+        ],
+        "extensions": [
+          ".pul"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "pulse",
+        "scopeName": "source.pulse",
+        "path": "./syntaxes/pulse.tmLanguage.json"
+      }
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "@types/vscode": "^1.118.0",
+    "typescript": "^6.0.3"
   }
 }
