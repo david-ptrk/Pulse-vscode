@@ -2,12 +2,73 @@
 	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
 	"name": "Pulse",
 	"patterns": [
+		{ "include": "#comments" },
+		{ "include": "#fstrings" },
+		{ "include": "#strings" },
 		{ "include": "#keywords" },
 		{ "include": "#constants" },
 		{ "include": "#numbers" },
-		{ "include": "#strings" }
+		{ "include": "#operators" },
+		{ "include": "#function-definition" },
+		{ "include": "#class-definition" }
 	],
 	"repository": {
+		"comments" : {
+			"name": "comment.line.number-sign.pulse",
+			"match": "#.*$"
+		},
+		"strings": {
+			"patterns": [
+				{
+					"name": "string.quoted.double.pulse",
+					"begin": "\"",
+					"end": "\"",
+					"patterns": [
+						{ "name": "constant.character.escape.pulse", "match": "\\\\." }
+					]
+				},
+				{
+					"name": "string.quoted.single.pulse",
+					"begin": "'",
+					"end": "'",
+					"patterns": [
+						{ "name": "constant.character.escape.pulse", "match": "\\\\." }
+					]
+				}
+			]
+		},
+		"fstrings": {
+			"patterns": [
+				{
+					"name": "string.interpolated.pulse",
+					"begin": "f\"",
+					"end": "\"",
+					"patterns": [
+						{
+							"name": "meta.embedded.expression.pulse",
+							"begin": "\\{",
+							"end": "\\}",
+							"patterns": [{ "include": "$self" }]
+						},
+						{ "name": "constant.character.escape.pulse", "match": "\\\\." }
+					]
+				},
+				{
+					"name": "string.interpolated.pulse",
+					"begin": "f'",
+					"end": "'",
+					"patterns": [
+						{
+							"name": "meta.embedded.expression.pulse",
+							"begin": "\\{",
+							"end": "\\}",
+							"patterns": [{ "include": "$self" }]
+						},
+						{ "name": "constant.character.escape.pulse", "match": "\\\\." }
+					]
+				}
+			]
+		},
 		"keywords": {
 			"patterns": [
 				{
@@ -56,7 +117,7 @@
 				},
 				{
 					"name": "constant.language.null.pulse",
-					"match": "\\b(null|None)\\b"
+					"match": "\\b(null|None|NaN)\\b"
 				}
 			]
 		},
@@ -72,16 +133,47 @@
 				}
 			]
 		},
-		"strings": {
-			"name": "string.quoted.double.pulse",
-			"begin": "\"",
-			"end": "\"",
+		"operators": {
 			"patterns": [
 				{
-					"name": "constant.character.escape.pulse",
-					"match": "\\\\."
+					"name": "keyword.operator.assignment.augmented.pulse",
+					"match": "(\\+=|-=|\\*=|/=|%=)"
+				},
+				{
+					"name": "keyword.operator.comparison.pulse",
+					"match": "(==|!=|<=|>=|<|>)"
+				},
+				{
+					"name": "keyword.operator.assignment.pulse",
+					"match": "(?<![=!<>])=(?!=)"
+				},
+				{
+					"name": "keyword.operator.arithmetic.pulse",
+					"match": "(\\*\\*|//|[+\\-*/%])"
+				},
+				{
+					"name": "keyword.operator.pipe.pulse",
+					"match": "\\|>"
+				},
+				{
+					"name": "keyword.operator.matrix.pulse",
+					"match": "@"
 				}
 			]
+		},
+		"function-definition": {
+            "match": "\\b(def)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(",
+            "captures": {
+                "1": { "name": "storage.type.function.pulse" },
+                "2": { "name": "entity.name.function.pulse" }
+            }
+        },
+		"class-definition": {
+			"match": "\\b(class)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+			"captures": {
+				"1": { "name": "storage.type.class.pulse" },
+				"2": { "name": "entity.name.type.class.pulse" }
+			}
 		}
 	},
 	"scopeName": "source.pulse"
