@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { PulseCompletionProvider } from "./completionProvider";
 import { PulseHoverProvider } from './hoverProvider';
+import { PulseDefinitionProvider } from './definitionProvider';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log("Pulse language extension activated");
@@ -16,7 +17,12 @@ export function activate(context: vscode.ExtensionContext) {
         new PulseHoverProvider()
     );
     
-    context.subscriptions.push(completionProvider, hoverProvider);
+    const definitionProvider = vscode.languages.registerDefinitionProvider(
+        { language: "pulse", scheme: "file" },
+        new PulseDefinitionProvider()
+    );
+    
+    context.subscriptions.push(completionProvider, hoverProvider, definitionProvider);
 }
 
 export function deactivate() {}
