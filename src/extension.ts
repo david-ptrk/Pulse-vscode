@@ -4,6 +4,7 @@ import { PulseHoverProvider } from './hoverProvider';
 import { PulseDefinitionProvider } from './definitionProvider';
 import { PulseDiagnosticsProvider } from './diagnosticsProvider';
 import { PulseOutlineProvider } from './outlineProvider';
+import { PulseSignatureProvider } from './signatureProvider';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log("Pulse language extension activated");
@@ -29,12 +30,18 @@ export function activate(context: vscode.ExtensionContext) {
         new PulseOutlineProvider()
     );
     
+    const signatureProvider = vscode.languages.registerSignatureHelpProvider(
+        { language: "pulse", scheme: "file" },
+        new PulseSignatureProvider(),
+        "(", ","
+    );
+    
     const diagnosticsProvider = new PulseDiagnosticsProvider();
     diagnosticsProvider.activate(context);
     
     context.subscriptions.push(
         completionProvider, hoverProvider, definitionProvider,
-        outlineProvider
+        outlineProvider, signatureProvider
     );
 }
 
