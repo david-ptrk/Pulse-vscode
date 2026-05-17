@@ -7,6 +7,7 @@ import { PulseOutlineProvider } from './outlineProvider';
 import { PulseSignatureProvider } from './signatureProvider';
 import { PulseAutoImportProvider } from './autoImportProvider';
 import { PulseRenameProvider } from './renameProvider';
+import { PulseFormattingProvider, PulseRangeFormattingProvider } from './formattingProvider';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log("Pulse language extension activated");
@@ -48,6 +49,16 @@ export function activate(context: vscode.ExtensionContext) {
         new PulseRenameProvider()
     );
     
+    const formattingProvider = vscode.languages.registerDocumentFormattingEditProvider(
+        { language: "pulse", scheme: "file" },
+        new PulseFormattingProvider()
+    );
+    
+    const rangeFormattingProvider = vscode.languages.registerDocumentRangeFormattingEditProvider(
+        { language: "pulse", scheme: "file" },
+        new PulseRangeFormattingProvider()
+    );
+    
     const diagnosticsProvider = new PulseDiagnosticsProvider();
     diagnosticsProvider.activate(context);
     
@@ -58,7 +69,9 @@ export function activate(context: vscode.ExtensionContext) {
         definitionProvider,
         outlineProvider,
         signatureProvider,
-        renameProvider
+        renameProvider,
+        formattingProvider,
+        rangeFormattingProvider
     );
 }
 
