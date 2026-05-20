@@ -24,11 +24,11 @@ export class PulseFormattingProvider implements vscode.DocumentFormattingEditPro
     
     private formatLines(lines: string[], indentChar: string): string[] {
         const result: string[] = [];
-        let indentLevel = 0;
         
-        const increaseAfter = /^\s*(if|elif|else|for|while|def|class|try|except|finally|match|case)\b.*:\s*$/;
-        const decreaseBefore = /^\s*(elif|else|except|finally)\b/;
-        const dedentKeywords = /^\s*(return|break|continue|pass|raise)\b/;
+        const increaseAfter  = /^(if|elif|else|for|while|def|class|try|except|finally|match|case)\b.*:\s*$/;
+        const decreaseBefore = /^(elif|else|except|finally)\b/;
+        
+        let indentLevel = 0;
         
         for (let i = 0; i < lines.length; i++) {
             const raw = lines[i];
@@ -52,18 +52,25 @@ export class PulseFormattingProvider implements vscode.DocumentFormattingEditPro
             }
             
             // apply current indent
-            const formatted = indentChar.repeat(indentLevel) + trimmed;
-            result.push(formatted);
+            result.push(indentChar.repeat(indentLevel) + trimmed);
             
             // increase indent after block headers
             if (increaseAfter.test(trimmed)) {
                 indentLevel++;
+                continue;
             }
             
             // look ahead - if next non-empty line dedents, reduce level
-            const nextNonEmpty = this.getNextNonEmptyLine(lines, i + 1);
-            if (nextNonEmpty && dedentKeywords.test(trimmed) && !increaseAfter.test(trimmed)) {
-                // dont't change indent here, handled naturally
+            const nextLine = this.getNextNonEmptyLine(lines, i + 1);
+            if (nextLine !== null) {
+                const nextTrimmed = nextLine.trim();
+                const nextRawIndent = nextLine.length - nextLine.trimStart().length;
+                const currentExpectedIndent = indentLevel * indentChar.length;
+                
+                // if next line is less indented than current level, snap back
+                if (nextRawIndent < currentExpectedIndent && !decreaseBefore.test(nextTrimmed)) {
+                    indentLevel = Math.floor(nextRawIndent / indentChar.length);
+                }
             }
         }
         
