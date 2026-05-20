@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { runPulseFile, PulseDiagnostic } from "./pulseRunner";
 
 interface FunctionInfo {
     name: string,
@@ -10,6 +11,22 @@ export class PulseDiagnosticsProvider {
     
     constructor() {
         this.diagnosticCollection = vscode.languages.createDiagnosticCollection("pulse");
+    }
+    
+    private runInterpreter(document: vscode.TextDocument): void {
+        runPulseFile(document.uri.fsPath, (results: PulseDiagnostic[]) => {
+            // merge with existing static diagnostics
+            const existing = this.diagnosticCollection.get(document.uri) || [];
+            const all = [...existing];
+            
+            for (const r of results) {
+                const pos = new vscode.Position(r.line, r.column);
+                const range = new vscode.Range(pos, new vscode.Position(r.line, r.column + 1));
+                all.push(new vscode.Diagnostic(range, `[Pulse] ${r.message}`, r.severity));
+            }
+            
+            this.diagnosticCollection.set(document.uri, all);
+        });
     }
     
     public activate(context: vscode.ExtensionContext): void {
@@ -52,6 +69,8 @@ export class PulseDiagnosticsProvider {
         diagnostics.push(...this.checkUnknownVariables(document));
         
         this.diagnosticCollection.set(document.uri, diagnostics);
+        
+        this.runInterpreter(document);
     }
     
     // Check 1: missing colon after if/elif/else/for/while/def/class/try/except/finally/match/case

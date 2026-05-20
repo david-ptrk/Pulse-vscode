@@ -36,7 +36,17 @@
         "scopeName": "source.pulse",
         "path": "./syntaxes/pulse.tmLanguage.json"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Pulse",
+      "properties": {
+        "pulse.interpreterPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to pulse.py interpreter (e.g. C:\\Projects\\Pulse\\pulse.py"
+        }
+      }
+    }
   },
   "devDependencies": {
     "@types/node": "^25.6.2",
