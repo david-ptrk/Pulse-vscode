@@ -26,44 +26,61 @@ export function runPulseFile(filePath: string, callback: (diagnostics: PulseDiag
     
     cp.exec(
         `py "${interpreterPath}" "${filePath}"`,
-        (_error: Error | null, _stdout: string, stderr: string) => {
-            console.log("Pulse stderr:", stderr);
-            console.log("Pulse error:", _error);
-            if (!stderr || stderr.trim() === "") {
-                // exit code 0 - no errors
-                callback([]);
-                return;
-            }
+        (_error, stdout, stderr) => {
+            console.log("STDOUT:", stdout);
+            console.log("STDERR:", stderr);
+            console.log("ERROR:", _error);
             
-            const diagnostics = parseErrors(stderr);
+            const diagnostics = parseErrors(stderr + "\n" + stdout);
+            
             console.log("Parsed diagnostics:", diagnostics);
             callback(diagnostics);
         }
     );
 }
 
-function parseErrors(stderr: string): PulseDiagnostic[] {
+function parseErrors(output: string): PulseDiagnostic[] {
     const diagnostics: PulseDiagnostic[] = [];
     
     // strip ANSI color codes
-    const clean = stderr.replace(/\x1b\[[0-9;]*m/g, "");
+    const clean = output.replace(/\x1b\[[0-9;]*m/g, "");
     
-    // match pattern: [Syntax Error] message \n --> <pulse>:line:col
-    const errorBlockPattern = /\[(Syntax Error|Lexical Error|Semantic Error|Runtime Error|Error)\]\s+(.+?)\s*\n\s*-->\s+<pulse>:(\d+):(\d+)/g;
+    // severity mapping
+    const getSeverity = (type: string): vscode.DiagnosticSeverity => {
+        if (type === "Runtime Error") return vscode.DiagnosticSeverity.Warning;
+        if (type === "Semantic Error") return vscode.DiagnosticSeverity.Warning;
+        return vscode.DiagnosticSeverity.Error;
+    };
     
+    const withLocation = /\[([^\]]+)\]\s*(.+?)\s*\n\s*-->\s*<pulse>:(\d+):(\d+)/g;
     let match: RegExpExecArray | null;
-    while ((match = errorBlockPattern.exec(clean)) !== null) {
+    
+    while ((match = withLocation.exec(clean)) !== null) {
         const type = match[1];
         const message = match[2].trim();
         const line = parseInt(match[3], 10) - 1;
         const column = parseInt(match[4], 10) - 1;
         
-        const severity = 
-            type === "Runtime Error" ? vscode.DiagnosticSeverity.Warning :
-            type === "Semantic Error" ? vscode.DiagnosticSeverity.Warning :
-            vscode.DiagnosticSeverity.Error;
+        diagnostics.push({
+            message,
+            line,
+            column,
+            severity: getSeverity(type),
+        });
+    }
+    
+    const noLocation = /\[([^\]]+)\]\s*(.+?)\s*-->\s*<pulse>/g;
+    
+    while ((match = noLocation.exec(clean)) !== null) {
+        const type = match[1];
+        const message = match[2].trim();
         
-        diagnostics.push({ message, line, column, severity });
+        diagnostics.push({
+            message: `${message} (no location)`,
+            line: 0,
+            column: 0,
+            severity: getSeverity(type),
+        });
     }
     
     return diagnostics;

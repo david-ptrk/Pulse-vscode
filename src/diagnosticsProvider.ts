@@ -14,7 +14,11 @@ export class PulseDiagnosticsProvider {
     }
     
     private runInterpreter(document: vscode.TextDocument): void {
+        console.log("RUN INTERPRETER CALLED");
+        
         runPulseFile(document.uri.fsPath, (results: PulseDiagnostic[]) => {
+            console.log("INTERPRETER RESULTS:", results);
+            
             // merge with existing static diagnostics
             const existing = this.diagnosticCollection.get(document.uri) || [];
             const all = [...existing];
