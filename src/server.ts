@@ -444,6 +444,344 @@ connection.onHover((params: HoverParams): Hover | null => {
     return null;
 });
 
+// Diagnostics
+function validateDocument(text: string): Diagnostic[] {
+    const diagnostics: Diagnostic[] = []
+    const lines = text.split("\n");
+    
+    const blockPattern = /^\s*(if|elif|else|for|while|def|class|try|except|finally|match|case)\b(.*)$/;
+    const decreaseBefore = /^\s*(elif|else|except|finally)\b/;
+    const funcPattern = /^\s*(?:static\s+)?def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/;
+    const loopStart = /^\s*(for|while)\b/;
+    const funcStart = /^\s*(?:static\s+)?def\b/;
+    
+    const seen = new Map<string, number>();
+    let insideLoop = 0;
+    let insideFunction = 0;
+    
+    const keywords = new Set([
+        "if", "else", "elif", "while", "for", "in", "def", "return",
+        "class", "import", "from", "as", "try", "except", "finally",
+        "raise", "del", "match", "case", "break", "continue", "pass",
+        "and", "or", "not", "is", "self", "static", "lambda", "None",
+        "null", "NaN", "True", "False", "dot", "transpose"
+    ]);
+    
+    const builtins = new Set([
+        "print", "input", "str", "int", "float", "type", "abs", "pow", "min",
+        "max", "len", "range", "round", "bool", "enumerate", "zip", "sum",
+        "any", "all", "Exception", "RuntimeError", "ValueError", "TypeError",
+        "IndexError", "KeyError", "AttributeError", "ZeroDivisionError",
+        "NameError", "NotImplementedError",
+    ]);
+    
+    // collect defined names
+    const defined = new Set<string>();
+    const assignPattern = /^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:\+|-|\*|\/)?=(?!=)/;
+    const classPattern = /^\s*class\s+([a-zA-Z_][a-zA-Z0-9_]*)/;
+    const forPattern = /^\s*for\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+in\b/;
+    const importPattern = /^\s*import\s+([a-zA-Z_][a-zA-Z0-9_]*)/;
+    const fromPattern = /^\s*from\s+\S+\s+import\s+([a-zA-Z_][a-zA-Z0-9_]*)/;
+    const exceptPattern = /^\s*except\s+\S+\s+as\s+([a-zA-Z_][a-zA-Z0-9_]*)/;
+    const fullFuncPattern = /^\s*(?:static\s+)?def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)/;
+    
+    for (const line of lines) {
+        const fm = fullFuncPattern.exec(line);
+        if (fm) {
+            defined.add(fm[1]);
+            fm[2].split(",").map(p => p.trim().split(":")[0].trim()).filter(Boolean).forEach(p => defined.add(p));
+            continue;
+        }
+        const cm = classPattern.exec(line); if (cm) { defined.add(cm[1]); continue; }
+        const form = forPattern.exec(line); if (form) { defined.add(form[1]); continue; }
+        const im = importPattern.exec(line); if (im) { defined.add(im[1]); continue; }
+        const frm = fromPattern.exec(line); if (frm) { defined.add(frm[1]); continue; }
+        const em = exceptPattern.exec(line); if (em) { defined.add(em[1]); continue; }
+        const am = assignPattern.exec(line); if (am) { defined.add(am[1]); }
+    }
+    
+    const pairs: Record<string, string> = { ")": "(", "]": "[", "}": "{" };
+    const open = new Set(["(", "[", "{"]);
+    const close = new Set([")", "]", "}"]);
+    
+    for (let i = 0; i < lines.length; i++) {
+        const text = lines[i];
+        const trimmed = text.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        
+        const stripped = text.replace(/#.*$/, "").trimEnd();
+        
+        // missing colon
+        const blockMatch = blockPattern.exec(stripped);
+        if (blockMatch) {
+            const kw = blockMatch[1];
+            if (!stripped.trimEnd().endsWith(":")) {
+                diagnostics.push({
+                    range: { start: { line: i, character: 0 }, end: { line: i, character: text.length } },
+                    message: `Missing ':' after '${kw}' block header`,
+                    severity: DiagnosticSeverity.Error,
+                    source: "pulse",
+                });
+            }
+        }
+        
+        // unmatched brackets per line
+        let inString: string | null = null;
+        const stack: { char: string; col: number }[] = [];
+        
+        for (let j = 0; j < text.length; j++) {
+            const ch = text[j];
+            if (!inString && (ch === '"' || ch === "'")) { inString = ch; continue; }
+            if (inString && ch === inString && text[j-1] !== "\\") { inString = null; continue; }
+            if (inString) continue;
+            if (ch === "#") break;
+            
+            if (open.has(ch)) {
+                stack.push({ char: ch, col: j });
+            }
+            else if (close.has(ch)) {
+                if (stack.length === 0) {
+                    diagnostics.push({
+                        range: { start: { line: i, character: j }, end: { line: i, character: j + 1 } },
+                        message: `Unmatched '${ch}'`,
+                        severity: DiagnosticSeverity.Error,
+                        source: "pulse",
+                    });
+                }
+                else if (stack[stack.length - 1].char !== pairs[ch]) {
+                    diagnostics.push({
+                        range: { start: { line: i, character: j }, end: { line: i, character: j + 1 } },
+                        message: `Mismatched bracket — got '${ch}'`,
+                        severity: DiagnosticSeverity.Error,
+                        source: "pulse",
+                    });
+                }
+                else {
+                    stack.pop();
+                }
+            }
+        }
+        
+        for (const unclosed of stack) {
+            const isAtEnd = unclosed.col >= text.trimEnd().length - 1;
+            if (!isAtEnd) {
+                diagnostics.push({
+                    range: { start: { line: i, character: unclosed.col }, end: { line: i, character: unclosed.col + 1 } },
+                    message: `Unclosed '${unclosed.char}'`,
+                    severity: DiagnosticSeverity.Warning,
+                    source: "pulse",
+                });
+            }
+        }
+        
+        // duplicate functions
+        const funcMatch = funcPattern.exec(text);
+        if (funcMatch) {
+            const name = funcMatch[1];
+            if (seen.has(name)) {
+                const col = text.indexOf(name);
+                diagnostics.push({
+                    range: { start: { line: i, character: col }, end: { line: i, character: col + name.length } },
+                    message: `Duplicate function '${name}' (first defined on line ${seen.get(name)! + 1})`,
+                    severity: DiagnosticSeverity.Warning,
+                    source: "pulse",
+                });
+            }
+            else {
+                seen.set(name, i);
+            }
+        }
+        
+        // invalid keyword usage
+        if (loopStart.test(text)) { insideLoop++; }
+        if (funcStart.test(text)) { insideFunction++; }
+        
+        if (/^\s*break\b/.test(text) && insideLoop === 0) {
+            const col = text.indexOf("break");
+            diagnostics.push({ range: { start: { line: i, character: col }, end: { line: i, character: col + 5 } }, message: "'break' outside loop", severity: DiagnosticSeverity.Error, source: "pulse" });
+        }
+        if (/^\s*continue\b/.test(text) && insideLoop === 0) {
+            const col = text.indexOf("continue");
+            diagnostics.push({ range: { start: { line: i, character: col }, end: { line: i, character: col + 8 } }, message: "'continue' outside loop", severity: DiagnosticSeverity.Error, source: "pulse" });
+        }
+        if (/^\s*return\b/.test(text) && insideFunction === 0) {
+            const col = text.indexOf("return");
+            diagnostics.push({ range: { start: { line: i, character: col }, end: { line: i, character: col + 6 } }, message: "'return' outside function", severity: DiagnosticSeverity.Error, source: "pulse" });
+        }
+        
+        // unknown variables
+        const cleanedLine = text
+            .replace(/#.*$/, "")
+            .replace(/"[^"]*"/g, match => " ".repeat(match.length))
+            .replace(/'[^']*'/g, match => " ".repeat(match.length));
+        
+        if (/^\s*(def|class|import|from|#)/.test(cleanedLine)) continue;
+        
+        const identPattern = /\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g;
+        let m: RegExpExecArray | null;
+        while ((m = identPattern.exec(cleanedLine)) !== null) {
+            const name = m[1];
+            const col  = m.index;
+            if (keywords.has(name) || builtins.has(name) || defined.has(name)) continue;
+            const assignLeft = new RegExp(`^\\s*${name}\\s*(?:\\+|-|\\*|\\/)?=`);
+            if (assignLeft.test(cleanedLine)) continue;
+            diagnostics.push({
+                range: { start: { line: i, character: col }, end: { line: i, character: col + name.length } },
+                message: `Unknown identifier '${name}'`,
+                severity: DiagnosticSeverity.Warning,
+                source: "pulse",
+            });
+        }
+    }
+    
+    return diagnostics
+}
+
+documents.onDidChangeContent(change => {
+    const diagnostics = validateDocument(change.document.getText());
+    connection.sendDiagnostics({ uri: change.document.uri, diagnostics });
+});
+
+documents.onDidOpen(event => {
+    const diagnostics = validateDocument(event.document.getText());
+    connection.sendDiagnostics({ uri: event.document.uri, diagnostics });
+})
+
+// Definition
+connection.onDefinition((params: DefinitionParams): Location | null => {
+    const doc = documents.get(params.textDocument.uri);
+    if (!doc) return null;
+    
+    const text = doc.getText();
+    const word = getWordAtPosition(text, params.position.line, params.position.character);
+    if (!word) return null;
+    
+    const symbols = parseSymbols(text);
+    const sym = symbols.find(s => s.name === word);
+    if (!sym) return null;
+    
+    const lines = text.split("\n");
+    const lineText = lines[sym.line] ?? "";
+    const col = lineText.indexOf(sym.name);
+    
+    return {
+        uri: params.textDocument.uri,
+        range: {
+            start: { line: sym.line, character: col },
+            end: { line: sym.line, character: col + sym.name.length },
+        },
+    };
+});
+
+// References
+connection.onReferences((params: ReferenceParams): Location[] => {
+    const doc = documents.get(params.textDocument.uri);
+    if (!doc) return [];
+    
+    const text = doc.getText();
+    const word = getWordAtPosition(text, params.position.line, params.position.character);
+    if (!word) return [];
+    
+    const reserved = new Set([
+        "if", "else", "elif", "while", "for", "in", "def", "return",
+        "class", "import", "from", "as", "try", "except", "finally",
+        "raise", "del", "match", "case", "break", "continue", "pass",
+        "and", "or", "not", "is", "self", "static", "lambda", "None",
+        "null", "NaN", "True", "False", "dot", "transpose"
+    ]);
+    if (reserved.has(word)) return [];
+    
+    const locations: Location[] = [];
+    const pattern = new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g");
+    const lines = text.split("\n");
+    
+    for (let i = 0; i < lines.length; i++) {
+        const cleaned = lines[i]
+            .replace(/#.*$/, match => " ".repeat(match.length))
+            .replace(/"[^"]*"/g, match => " ".repeat(match.length))
+            .replace(/'[^']*'/g, match => " ".repeat(match.length));
+        
+        let m: RegExpExecArray | null;
+        while ((m = pattern.exec(cleaned)) !== null) {
+            locations.push({
+                uri: params.textDocument.uri,
+                range: {
+                    start: { line: i, character: m.index },
+                    end: { line: i, character: m.index + word.length },
+                },
+            });
+        }
+    }
+    
+    return locations;
+})
+
+// Rename
+connection.onPrepareRename((params): Range | null => {
+    const doc = documents.get(params.textDocument.uri);
+    if (!doc) return null;
+    
+    const text = doc.getText();
+    const word = getWordAtPosition(text, params.position.line, params.position.character);
+    if (!word) return null;
+    
+    const reserved = new Set([
+        "if", "else", "elif", "while", "for", "in", "def", "return",
+        "class", "import", "from", "as", "try", "except", "finally",
+        "raise", "del", "match", "case", "break", "continue", "pass",
+        "and", "or", "not", "is", "self", "static", "lambda", "None",
+        "null", "NaN", "True", "False", "dot", "transpose"
+    ]);
+    if (reserved.has(word)) return null;
+    
+    const lines = text.split("\n");
+    const lineText = lines[params.position.line] ?? "";
+    const col = lineText.indexOf(word, Math.max(0, params.position.character - word.length));
+    
+    return {
+        start: { line: params.position.line, character: col },
+        end: { line: params.position.line, character: col + word.length },
+    };
+});
+
+connection.onRenameRequest((params: RenameParams): WorkspaceEdit | null => {
+    const doc = documents.get(params.textDocument.uri);
+    if (!doc) return null;
+    
+    const text = doc.getText();
+    const oldName = getWordAtPosition(text, params.position.line, params.position.character);
+    if (!oldName) return null;
+    
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(params.newName)) return null;
+    
+    const edits: TextEdit[] = [];
+    const pattern = new RegExp(`\\b${oldName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g");
+    const lines = text.split("\n");
+    
+    for (let i = 0; i < lines.length; i++) {
+        const cleaned = lines[i]
+            .replace(/#.*$/, match => " ".repeat(match.length))
+            .replace(/"[^"]*"/g, match => " ".repeat(match.length))
+            .replace(/'[^']*'/g, match => " ".repeat(match.length));
+        
+        let m: RegExpExecArray | null;
+        while ((m = pattern.exec(cleaned)) !== null) {
+            edits.push(TextEdit.replace(
+                {
+                    start: { line: i, character: m.index },
+                    end:   { line: i, character: m.index + oldName.length },
+                },
+                params.newName
+            ));
+        }
+    }
+    
+    return { changes: { [params.textDocument.uri]: edits } };
+});
+
+// Document Symbols (Outline)
+
+
 // Listen -------------------------
 documents.listen(connection);
 connection.listen();
