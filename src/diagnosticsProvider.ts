@@ -237,11 +237,11 @@ export class PulseDiagnosticsProvider {
         const diagnostics: vscode.Diagnostic[] = [];
         
         const keywords = new Set([
-            "if", "elif", "else", "while", "for", "break", "continue", "pass",
-            "return", "match", "case", "try", "except", "finally", "raise",
-            "import", "from", "as", "del", "in", "is", "and", "or", "not",
-            "def", "class", "static", "lambda", "self", "dot", "transpose",
-            "true", "false", "True", "False", "null", "None", "NaN",
+            "if", "else", "elif", "while", "for", "in", "def", "return",
+            "class", "import", "from", "as", "try", "except", "finally",
+            "raise", "del", "match", "case", "break", "continue", "pass",
+            "and", "or", "not", "is", "self", "static", "lambda", "None",
+            "null", "NaN", "True", "False", "dot", "transpose"
         ]);
         
         const builtins = new Set([
