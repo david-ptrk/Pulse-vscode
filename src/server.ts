@@ -34,6 +34,7 @@ import {
     DefinitionParams,
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
+import * as cp from "child_process";
 
 // create connection
 const connection = createConnection(ProposedFeatures.all);
@@ -62,6 +63,9 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
             },
             documentFormattingProvider: true,
             documentRangeFormattingProvider: true,
+            workspace: {
+                workspaceFolders: { supported: true }
+            }
         },
     };
 });
@@ -637,15 +641,83 @@ function validateDocument(text: string): Diagnostic[] {
     return diagnostics
 }
 
+function parseErrors(stderr: string): Diagnostic[] {
+    const diagnostics: Diagnostic[] = [];
+    const clean = stderr.replace(/\x1b\[[0-9;]*m/g, "");
+    
+    const getSeverity = (type: string): DiagnosticSeverity => {
+        if (type === "Runtime Error")  return DiagnosticSeverity.Warning;
+        if (type === "Semantic Error") return DiagnosticSeverity.Warning;
+        return DiagnosticSeverity.Error;
+    };
+    
+    const withLocation = /\[([^\]]+)\]\s*(.+?)\s*\n\s*-->\s*<pulse>:(\d+):(\d+)/g;
+    let match: RegExpExecArray | null;
+    
+    while ((match = withLocation.exec(clean)) !== null) {
+        const line = parseInt(match[3], 10) - 1;
+        const col  = parseInt(match[4], 10) - 1;
+        diagnostics.push({
+            range: {
+                start: { line, character: col },
+                end:   { line, character: col + 1 },
+            },
+            message:  `[Pulse] ${match[2].trim()}`,
+            severity: getSeverity(match[1]),
+            source:   "pulse-interpreter",
+        });
+    }
+    
+    return diagnostics;
+}
+
+function runInterpreter(uri: string): void {
+    connection.workspace.getConfiguration({ section: "pulse" }).then((config) => {
+        const interpreterPath = (config as Record<string, unknown>)["interpreterPath"] as string | undefined;
+        connection.console.log(`Interpreter path: ${interpreterPath}`);
+        if (!interpreterPath || interpreterPath.trim() === "") {
+            connection.console.log("No interpreter path configured");
+            return;
+        }
+        
+        const filePath = decodeURIComponent(uri)
+            .replace(/^file:\/\/\//, "")
+            .replace(/\//g, "\\");
+        connection.console.log(`Running: py "${interpreterPath.trim()}" "${filePath}"`);
+        
+        cp.exec(
+            `py "${interpreterPath.trim()}" "${filePath}"`,
+            (_error: Error | null, _stdout: string, stderr: string) => {
+                connection.console.log(`Stderr: ${stderr}`);
+                const diagnostics = parseErrors(stderr);
+                connection.console.log(`Parsed: ${JSON.stringify(diagnostics)}`);
+                if (diagnostics.length > 0) {
+                    const existing = staticDiagnosticsCache.get(uri) || [];
+                    connection.sendDiagnostics({ uri, diagnostics: [...existing, ...diagnostics] });
+                }
+            }
+        );
+    });
+}
+
+const staticDiagnosticsCache = new Map<string, Diagnostic[]>();
+
 documents.onDidChangeContent(change => {
     const diagnostics = validateDocument(change.document.getText());
+    staticDiagnosticsCache.set(change.document.uri, diagnostics);
     connection.sendDiagnostics({ uri: change.document.uri, diagnostics });
 });
 
 documents.onDidOpen(event => {
     const diagnostics = validateDocument(event.document.getText());
+    staticDiagnosticsCache.set(event.document.uri, diagnostics);
     connection.sendDiagnostics({ uri: event.document.uri, diagnostics });
-})
+    runInterpreter(event.document.uri);
+});
+
+documents.onDidSave(event => {
+    runInterpreter(event.document.uri);
+});
 
 // Definition
 connection.onDefinition((params: DefinitionParams): Location | null => {
