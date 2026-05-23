@@ -32,6 +32,10 @@ import {
     SignatureInformation,
     ParameterInformation,
     DefinitionParams,
+    CodeAction,
+    CodeActionKind,
+    CodeActionParams,
+    Command,
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import * as cp from "child_process";
@@ -65,7 +69,8 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
             documentRangeFormattingProvider: true,
             workspace: {
                 workspaceFolders: { supported: true }
-            }
+            },
+            codeActionProvider: true,
         },
     };
 });
@@ -1268,6 +1273,155 @@ connection.onDocumentRangeFormatting((params): TextEdit[] => {
         { start: { line: params.range.start.line, character: 0 }, end: { line: params.range.end.line, character: lastChar } },
         formatted.join("\n")
     )];
+});
+
+// Code Actions - Quick Fixes
+connection.onCodeAction((params: CodeActionParams): CodeAction[] => {
+    const doc = documents.get(params.textDocument.uri);
+    if (!doc) return [];
+    
+    const text = doc.getText();
+    const lines = text.split("\n");
+    const actions: CodeAction[] = [];
+    
+    for (const diagnostic of params.context.diagnostics) {
+        const line = diagnostic.range.start.line;
+        const lineText = lines[line] ?? "";
+        
+        // Fix: missing colon
+        if (diagnostic.message.includes("Missing ':'")) {
+            actions.push({
+                title: "Add missing ':'",
+                kind: CodeActionKind.QuickFix,
+                diagnostics: [diagnostic],
+                edit: {
+                    changes: {
+                        [params.textDocument.uri]: [
+                            TextEdit.insert(
+                                { line, character: lineText.trimEnd().length },
+                                ":"
+                            )
+                        ]
+                    }
+                },
+                isPreferred: true,
+            });
+        }
+        
+        // Fix: remove break outside loop
+        if (diagnostic.message.includes("'break' outside loop")) {
+            actions.push({
+                title: "Remove 'break'",
+                kind: CodeActionKind.QuickFix,
+                diagnostics: [diagnostic],
+                edit: {
+                    changes: {
+                        [params.textDocument.uri]: [
+                            TextEdit.del({
+                                start: { line, character: 0 },
+                                end: { line: line + 1, character: 0 },
+                            })
+                        ]
+                    }
+                },
+                isPreferred: true,
+            });
+        }
+        
+        // Fix: remove continue outside loop
+        if (diagnostic.message.includes("'continue' outside loop")) {
+            actions.push({
+                title: "Remove 'continue'",
+                kind: CodeActionKind.QuickFix,
+                diagnostics: [diagnostic],
+                edit: {
+                    changes: {
+                        [params.textDocument.uri]: [
+                            TextEdit.del({
+                                start: { line, character: 0 },
+                                end: { line: line + 1, character: 0 },
+                            })
+                        ]
+                    }
+                },
+                isPreferred: true,
+            });
+        }
+        
+        // Fix: remove return outside function
+        if (diagnostic.message.includes("'return' outside function")) {
+            actions.push({
+                title: "Remove 'return'",
+                kind: CodeActionKind.QuickFix,
+                diagnostics: [diagnostic],
+                edit: {
+                    changes: {
+                        [params.textDocument.uri]: [
+                            TextEdit.del({
+                                start: { line, character: 0 },
+                                end: { line: line + 1, character: 0 },
+                            })
+                        ]
+                    }
+                },
+                isPreferred: true,
+            });
+        }
+        
+        // Fix: unknown identifier
+        if (diagnostic.message.includes("Unknown identifier")) {
+            const match = /Unknown identifier '([^']+)'/.exec(diagnostic.message);
+            if (match) {
+                const name = match[1];
+                const exp = PULSE_MODULES.find(m => m.name === name);
+                if (exp) {
+                    const importEdit = buildImportEdit(text, exp);
+                    actions.push({
+                        title: `Add import: from ${exp.module} import ${exp.name}`,
+                        kind: CodeActionKind.QuickFix,
+                        diagnostics: [diagnostic],
+                        edit: {
+                            changes: {
+                                [params.textDocument.uri]: [importEdit]
+                            }
+                        },
+                        isPreferred: true,
+                    });
+                }
+            }
+        }
+        
+        // Fix: duplicate function
+        if (diagnostic.message.includes("Duplicate function")) {
+            const match = /Duplicate function '([^']+)'/.exec(diagnostic.message);
+            if (match) {
+                const name = match[1];
+                const newName = `${name}_2`;
+                const col = lineText.indexOf(name);
+                actions.push({
+                    title: `Rename duplicate to '${newName}'`,
+                    kind: CodeActionKind.QuickFix,
+                    diagnostics: [diagnostic],
+                    edit: {
+                        changes: {
+                            [params.textDocument.uri]: [
+                                TextEdit.replace(
+                                    {
+                                        start: { line, character: col },
+                                        end: { line, character: col + name.length },
+                                    },
+                                    newName
+                                )
+                            ]
+                        }
+                    },
+                    isPreferred: false,
+                });
+            }
+        }
+    }
+    
+    return actions;
 });
 
 // Listen -------------------------
