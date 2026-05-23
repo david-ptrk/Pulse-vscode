@@ -291,8 +291,202 @@ connection.onCompletion((params: TextDocumentPositionParams): CompletionItem[] =
         sortText: `a_${sym.name}`,
     }));
     
+    // auto-import suggestions
+    const alreadyImported = getImportedNames(text);
+    for (const exp of PULSE_MODULES) {
+        if (alreadyImported.has(exp.name)) continue;
+        items.push({
+            label: exp.name,
+            kind: exp.kind,
+            detail: `${exp.doc} (from ${exp.module})`,
+            documentation: {
+                kind: MarkupKind.Markdown,
+                value: `**${exp.name}** from \`${exp.module}\`\n\n${exp.doc}\n\n*Auto-import:* \`from ${exp.module} import ${exp.name}\``,
+            },
+            additionalTextEdits: [buildImportEdit(text, exp)],
+            sortText: `zz_${exp.name}`,
+            filterText: exp.name,
+            labelDetails: { description: `from ${exp.module}` },
+        });
+    }
+    
     return items;
 });
+
+// Auto-imports
+interface ModuleExport {
+    name: string;
+    module: string;
+    kind: CompletionItemKind;
+    doc: string;
+}
+
+const PULSE_MODULES: ModuleExport[] = [
+    // datasets
+    { name: "iris", module: "datasets", kind: CompletionItemKind.Function, doc: "Load the Iris flower dataset" },
+    { name: "wine", module: "datasets", kind: CompletionItemKind.Function, doc: "Load the Wine recognition dataset" },
+    { name: "digits", module: "datasets", kind: CompletionItemKind.Function, doc: "Load the handwritten digits datase" },
+    { name: "breast_cancer", module: "datasets", kind: CompletionItemKind.Function, doc: "Load the Breast Cancer Wisconsin dataset" },
+    { name: "diabetes", module: "datasets", kind: CompletionItemKind.Function, doc: "Load the Diabetes dataset" },
+    { name: "make_classification", module: "datasets", kind: CompletionItemKind.Function, doc: "Generate a synthetic classification dataset" },
+    { name: "make_regression", module: "datasets", kind: CompletionItemKind.Function, doc: "Generate a synthetic regression dataset" },
+    { name: "make_blobs", module: "datasets", kind: CompletionItemKind.Function, doc: "Generate isotropic Gaussian blobs for clustering" },
+    { name: "make_moons", module: "datasets", kind: CompletionItemKind.Function, doc: "Generate two interleaving half-circles" },
+    { name: "make_circles", module: "datasets", kind: CompletionItemKind.Function, doc: "Generate a large circle containing a small circle" },
+    { name: "load_csv", module: "datasets", kind: CompletionItemKind.Function, doc: "Load a CSV file into a dataset" },
+    
+    // io
+    { name: "read_file", module: "io", kind: CompletionItemKind.Function, doc: "Read the contents of a file" },
+    { name: "write_file", module: "io", kind: CompletionItemKind.Function, doc: "Write data to a file" },
+    { name: "append_file", module: "io", kind: CompletionItemKind.Function, doc: "Append data to the end of a file" },
+    { name: "file_exists", module: "io", kind: CompletionItemKind.Function, doc: "Check if a file exists" },
+    { name: "read_lines", module: "io", kind: CompletionItemKind.Function, doc: "Read a file line by line" },
+    
+    // learn
+    { name: "example", module: "learn", kind: CompletionItemKind.Function, doc: "Run an interactive step-by-step ML learning example for a given topic" },
+    { name: "topics", module: "learn", kind: CompletionItemKind.Function, doc: "List all available ML learning topics in the learn module" },
+    
+    // math
+    { name: "sqrt", module: "math", kind: CompletionItemKind.Function, doc: "Square root" },
+    { name: "floor", module: "math", kind: CompletionItemKind.Function, doc: "Floor function" },
+    { name: "ceil", module: "math", kind: CompletionItemKind.Function, doc: "Ceil function" },
+    { name: "log", module: "math", kind: CompletionItemKind.Function, doc: "Natural logarithm function" },
+    { name: "log2", module: "math", kind: CompletionItemKind.Function, doc: "Logarithm base 2 function" },
+    { name: "log10", module: "math", kind: CompletionItemKind.Function, doc: "Logarithm base 10 function" },
+    { name: "exp", module: "math", kind: CompletionItemKind.Function, doc: "Exponent function" },
+    { name: "sin", module: "math", kind: CompletionItemKind.Function, doc: "Sine function" },
+    { name: "cos", module: "math", kind: CompletionItemKind.Function, doc: "Cosine function" },
+    { name: "tan", module: "math", kind: CompletionItemKind.Function, doc: "Tangent function" },
+    { name: "abs", module: "math", kind: CompletionItemKind.Function, doc: "Absolute function" },
+    { name: "pow", module: "math", kind: CompletionItemKind.Function, doc: "Power function" },
+    { name: "pi", module: "math", kind: CompletionItemKind.Constant, doc: "" },
+    { name: "e", module: "math", kind: CompletionItemKind.Constant, doc: "" },
+    { name: "inf", module: "math", kind: CompletionItemKind.Constant, doc: "" },
+    { name: "tau", module: "math", kind: CompletionItemKind.Constant, doc: "" },
+    
+    // metrics
+    { name: "accuracy", module: "metrics", kind: CompletionItemKind.Function, doc: "Return accuracy = correct_predictions / total_predictions (0.0–1.0)" },
+    { name: "precision", module: "metrics", kind: CompletionItemKind.Function, doc: "Return macro precision = TP / (TP + FP) averaged across classes" },
+    { name: "recall", module: "metrics", kind: CompletionItemKind.Function, doc: "Return macro recall = TP / (TP + FN) averaged across classes" },
+    { name: "f1", module: "metrics", kind: CompletionItemKind.Function, doc: "Return macro F1 score = harmonic mean of precision and recall" },
+    { name: "confusion_matrix", module: "metrics", kind: CompletionItemKind.Function, doc: "Print confusion matrix with per-class accuracy breakdown" },
+    { name: "classification_report", module: "metrics", kind: CompletionItemKind.Function, doc: "Print precision, recall, f1-score report per class" },
+    { name: "mse", module: "metrics", kind: CompletionItemKind.Function, doc: "Return Mean Squared Error (MSE) = average squared error" },
+    { name: "rmse", module: "metrics", kind: CompletionItemKind.Function, doc: "Return Root Mean Squared Error (RMSE) = sqrt(MSE)" },
+    { name: "mae", module: "metrics", kind: CompletionItemKind.Function, doc: "Return Mean Absolute Error (MAE) = average absolute error" },
+    { name: "r2", module: "metrics", kind: CompletionItemKind.Function, doc: "Return R² score (coefficient of determination)" },
+    { name: "mape", module: "metrics", kind: CompletionItemKind.Function, doc: "Return Mean Absolute Percentage Error (MAPE) in percentage" },
+    { name: "summary", module: "metrics", kind: CompletionItemKind.Function, doc: "Print full evaluation summary (auto-detects classification or regression)" },
+    
+    // model
+    { name: "LinearRegression", module: "models", kind: CompletionItemKind.Function, doc: "Create a linear regression model for continuous prediction tasks" },
+    { name: "LogisticRegression", module: "models", kind: CompletionItemKind.Function, doc: "Create a logistic regression model for binary/multi-class classification" },
+    { name: "DecisionTree", module: "models", kind: CompletionItemKind.Function, doc: "Create a decision tree model for classification or regression" },
+    { name: "RandomForest", module: "models", kind: CompletionItemKind.Function, doc: "Create a random forest ensemble model for classification or regression" },
+    { name: "KMeans", module: "models", kind: CompletionItemKind.Function, doc: "Create a K-Means clustering model (unsupervised learning)" },
+    { name: "KNN", module: "models", kind: CompletionItemKind.Function, doc: "Create a K-Nearest Neighbors classifier with configurable k" },
+    { name: "SVC", module: "models", kind: CompletionItemKind.Function, doc: "Create a Support Vector Classifier using kernel methods" },
+    { name: "NeuralNetwork", module: "models", kind: CompletionItemKind.Function, doc: "Create a multi-layer perceptron neural network classifier" },
+    { name: "Model.auto", module: "models", kind: CompletionItemKind.Function, doc: "Automatically select and train the best model using cross-validation" },
+    
+    // os
+    { name: "getcwd", module: "os", kind: CompletionItemKind.Function, doc: "Return current working directory" },
+    { name: "chdir", module: "os", kind: CompletionItemKind.Function, doc: "Change current working directory" },
+    { name: "listdir", module: "os", kind: CompletionItemKind.Function, doc: "List files and folders in a directory" },
+    { name: "mkdir", module: "os", kind: CompletionItemKind.Function, doc: "Create a directory" },
+    { name: "makedirs", module: "os", kind: CompletionItemKind.Function, doc: "Create directories recursively" },
+    { name: "rmdir", module: "os", kind: CompletionItemKind.Function, doc: "Remove an empty directory" },
+    { name: "removedirs", module: "os", kind: CompletionItemKind.Function, doc: "Remove directory and empty parent directories" },
+    { name: "rmtree", module: "os", kind: CompletionItemKind.Function, doc: "Remove directory and all contents recursively" },
+    { name: "remove", module: "os", kind: CompletionItemKind.Function, doc: "Delete a file" },
+    { name: "rename", module: "os", kind: CompletionItemKind.Function, doc: "Rename or move a file/directory" },
+    { name: "copy", module: "os", kind: CompletionItemKind.Function, doc: "Copy a file to another location" },
+    { name: "exists", module: "os", kind: CompletionItemKind.Function, doc: "Check if a path exists" },
+    { name: "is_file", module: "os", kind: CompletionItemKind.Function, doc: "Check if path is a file" },
+    { name: "is_dir", module: "os", kind: CompletionItemKind.Function, doc: "Check if path is a directory" },
+    { name: "is_abs", module: "os", kind: CompletionItemKind.Function, doc: "Check if path is absolute" },
+    { name: "join", module: "os", kind: CompletionItemKind.Function, doc: "Join path components safely" },
+    { name: "basename", module: "os", kind: CompletionItemKind.Function, doc: "Return final component of a path" },
+    { name: "dirname", module: "os", kind: CompletionItemKind.Function, doc: "Return directory portion of a path" },
+    { name: "abspath", module: "os", kind: CompletionItemKind.Function, doc: "Return absolute path" },
+    { name: "splitext", module: "os", kind: CompletionItemKind.Function, doc: "Split path into root and extension" },
+    { name: "split", module: "os", kind: CompletionItemKind.Function, doc: "Split path into head and tail" },
+    { name: "getsize", module: "os", kind: CompletionItemKind.Function, doc: "Return file size in bytes" },
+    { name: "stat", module: "os", kind: CompletionItemKind.Function, doc: "Return file metadata (size, timestamps, mode)" },
+    { name: "getenv", module: "os", kind: CompletionItemKind.Function, doc: "Get environment variable value" },
+    { name: "setenv", module: "os", kind: CompletionItemKind.Function, doc: "Set environment variable" },
+    { name: "env_vars", module: "os", kind: CompletionItemKind.Function, doc: "Return all environment variables" },
+    { name: "platform", module: "os", kind: CompletionItemKind.Function, doc: "Return operating system platform string" },
+    { name: "sep", module: "os", kind: CompletionItemKind.Function, doc: "Return OS path separator" },
+    
+    // preprocess
+    { name: "normalize", module: "preprocess", kind: CompletionItemKind.Function, doc: "L2 normalize each column to unit length." },
+    { name: "standardize", module: "preprocess", kind: CompletionItemKind.Function, doc: "Standardize features to zero mean and unit variance." },
+    { name: "min_max_scale", module: "preprocess", kind: CompletionItemKind.Function, doc: "Scale each feature to range [0, 1]." },
+    { name: "train_test_split", module: "preprocess", kind: CompletionItemKind.Function, doc: "Split dataset into train and test sets (X_train, X_test, y_train, y_test)." },
+    { name: "shuffle", module: "preprocess", kind: CompletionItemKind.Function, doc: "Randomly shuffle dataset rows." },
+    { name: "flatten_data", module: "preprocess", kind: CompletionItemKind.Function, doc: "Flatten multi-dimensional samples into 2D (n_samples, features)." },
+    { name: "one_hot_encode", module: "preprocess", kind: CompletionItemKind.Function, doc: "Convert integer labels into one-hot encoded vectors" },
+    
+    // random
+    { name: "random", module: "random", kind: CompletionItemKind.Function, doc: "Return random float in [0.0, 1.0)." },
+    { name: "randint", module: "random", kind: CompletionItemKind.Function, doc: "Return random integer in [a, b] inclusive." },
+    { name: "uniform", module: "random", kind: CompletionItemKind.Function, doc: "Return random float in range [a, b]." },
+    { name: "randrange", module: "random", kind: CompletionItemKind.Function, doc: "Return random integer from range(start, stop, step)." },
+    { name: "choice", module: "random", kind: CompletionItemKind.Function, doc: "Return a random element from a list." },
+    { name: "choices", module: "random", kind: CompletionItemKind.Function, doc: "Return k random elements with replacement." },
+    { name: "sample", module: "random", kind: CompletionItemKind.Function, doc: "Return k unique random elements without replacement." },
+    { name: "shuffle", module: "random", kind: CompletionItemKind.Function, doc: "Shuffle list in-place." },
+    { name: "gauss", module: "random", kind: CompletionItemKind.Function, doc: "Gaussian distribution (mean, std deviation)." },
+    { name: "normalvariate", module: "random", kind: CompletionItemKind.Function, doc: "Normal distribution (alternative to gauss)." },
+    { name: "expovariate", module: "random", kind: CompletionItemKind.Function, doc: "Exponential distribution with lambda rate." },
+    { name: "triangular", module: "random", kind: CompletionItemKind.Function, doc: "Triangular distribution (low, high, mode)." },
+    { name: "seed", module: "random", kind: CompletionItemKind.Function, doc: "Seed RNG for reproducible results." },
+    { name: "get_state", module: "random", kind: CompletionItemKind.Function, doc: "Return current RNG internal state." },
+    
+    // time
+    { name: "now", module: "time", kind: CompletionItemKind.Function, doc: "Return the current UNIX timestamp in seconds since the epoch." },
+    { name: "clock", module: "time", kind: CompletionItemKind.Function, doc: "Return a high-resolution performance counter for timing code execution." },
+    { name: "sleep", module: "time", kind: CompletionItemKind.Function, doc: "Pause execution for the given number of seconds." },
+];
+
+function getImportedNames(text: string): Set<string> {
+    const imported = new Set<string>();
+    const fromImport   = /^\s*from\s+\S+\s+import\s+(.+)/;
+    const directImport = /^\s*import\s+([a-zA-Z_][a-zA-Z0-9_]*)/;
+    
+    for (const line of text.split("\n")) {
+        const fromMatch = fromImport.exec(line);
+        if (fromMatch) {
+            fromMatch[1].split(",").map(n => n.trim()).forEach(n => imported.add(n));
+            continue;
+        }
+        const directMatch = directImport.exec(line);
+        if (directMatch) imported.add(directMatch[1]);
+    }
+    
+    return imported;
+}
+
+function buildImportEdit(text: string, exp: ModuleExport): TextEdit {
+    const lines = text.split("\n");
+    let lastImportLine = -1;
+    
+    for (let i = 0; i < lines.length; i++) {
+        if (/^\s*(import|from)\s+/.test(lines[i])) {
+            lastImportLine = i;
+        }
+    }
+    
+    const importStatement = `from ${exp.module} import ${exp.name}\n`;
+    
+    if (lastImportLine >= 0) {
+        return TextEdit.insert({ line: lastImportLine + 1, character: 0 }, importStatement);
+    }
+    else {
+        return TextEdit.insert({ line: 0, character: 0 }, importStatement);
+    }
+}
 
 // Hover
 const KEYWORD_DOCS: Record<string, string> = {
