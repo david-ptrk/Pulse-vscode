@@ -780,7 +780,229 @@ connection.onRenameRequest((params: RenameParams): WorkspaceEdit | null => {
 });
 
 // Document Symbols (Outline)
+connection.onDocumentSymbol((params: DocumentSymbolParams): SymbolInformation[] => {
+    const doc = documents.get(params.textDocument.uri);
+    if (!doc) return [];
+    
+    const text = doc.getText();
+    const lines = text.split("\n");
+    const symbols: SymbolInformation[] = [];
+    
+    const funcPattern = /^\s*(?:static\s+)?def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)/;
+    const classPattern = /^\s*class\s+([a-zA-Z_][a-zA-Z0-9_]*)/;
+    const varPattern = /^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:\+|-|\*|\/)?=(?!=)/;
+    
+    for (let i = 0; i < lines.length; i++) {
+        const text = lines[i];
+        
+        const classMatch = classPattern.exec(text);
+        if (classMatch) {
+            symbols.push({
+                name: classMatch[1],
+                kind: SymbolKind.Class,
+                location: { uri: params.textDocument.uri, range: { start: { line: i, character: 0 }, end: { line: i, character: text.length } } },
+            });
+            continue;
+        }
+        
+        const funcMatch = funcPattern.exec(text);
+        if (funcMatch) {
+            symbols.push({
+                name: `${funcMatch[1]}(${funcMatch[2]})`,
+                kind: SymbolKind.Function,
+                location: { uri: params.textDocument.uri, range: { start: { line: i, character: 0 }, end: { line: i, character: text.length } } },
+            });
+            continue;
+        }
+        
+        const indent = text.length - text.trimStart().length;
+        if (indent === 0) {
+            const varMatch = varPattern.exec(text);
+            if (varMatch) {
+                symbols.push({
+                    name: varMatch[1],
+                    kind: SymbolKind.Variable,
+                    location: { uri: params.textDocument.uri, range: { start: { line: i, character: 0 }, end: { line: i, character: text.length } } },
+                });
+            }
+        }
+    }
+    
+    return symbols;
+})
 
+// Signature Help
+const SIGNATURES_DEFS: Record<string, { label: string; doc: string; params: string[] }> = {
+    print: { label: "print(*values)", doc: "Print values to stdout.", params: ["*values"] },
+    input: { label: "input(prompt?)", doc: "Read a line from stdin.", params: ["prompt?"] },
+    str: { label: "str(obj)", doc: "Convert object to string.", params: ["obj"] },
+    int: { label: "int(obj)", doc: "Convert object to integer.", params: ["obj"] },
+    float: { label: "float(obj)", doc: "Convert object to float.", params: ["obj"] },
+    bool: { label: "bool(obj)", doc: "Convert object to boolean.", params: ["obj"] },
+    type: { label: "type(obj)", doc: "Return the type of an object.", params: ["obj"] },
+    abs: { label: "abs(x)", doc: "Return the absolute value of x.", params: ["x"] },
+    pow: { label: "pow(base, exp)", doc: "Return base raised to exp.", params: ["base", "exp"] },
+    round: { label: "round(x, ndigits?)", doc: "Round x to ndigits decimal places.", params: ["x", "ndigits?"] },
+    min: { label: "min(*args)", doc: "Return the minimum value.", params: ["*args"] },
+    max: { label: "max(*args)", doc: "Return the maximum value.", params: ["*args"] },
+    sum: { label: "sum(iterable)", doc: "Sum all elements of an iterable.", params: ["iterable"] },
+    len: { label: "len(obj)", doc: "Return the length of an object.", params: ["obj"] },
+    range: { label: "range(start, stop?, step?)", doc: "Generate a sequence of numbers.", params: ["start", "stop?", "step?"] },
+    enumerate: { label: "enumerate(iterable, start?)", doc: "Return (index, value) pairs.", params: ["iterable", "start?"] },
+    zip: { label: "zip(*iterables)", doc: "Pair elements from iterables.", params: ["*iterables"] },
+    any: { label: "any(iterable)", doc: "Return true if any value is truthy.", params: ["iterable"] },
+    all: { label: "all(iterable)", doc: "Return true if all values are truthy.", params: ["iterable"] },
+};
+
+function getCallContext(linePrefix: string): { funcName: string; paramIndex: number } | null {
+    let depth = 0;
+    let paramIndex = 0;
+    
+    for (let i = linePrefix.length - 1; i >= 0; i--) {
+        const ch = linePrefix[i];
+        if (ch === ")" || ch === "]" || ch === "}") { depth++; continue; }
+        if (ch === "(" || ch === "[" || ch === "{") {
+            if (depth > 0) { depth--; continue; }
+            if (ch === "(") {
+                const before = linePrefix.substring(0, i).trimEnd();
+                const match  = /([a-zA-Z_][a-zA-Z0-9_]*)$/.exec(before);
+                if (!match) return null;
+                return { funcName: match[1], paramIndex };
+            }
+            return null;
+        }
+        if (ch === "," && depth === 0) paramIndex++;
+    }
+    return null;
+}
+
+connection.onSignatureHelp((params: SignatureHelpParams): SignatureHelp | null => {
+    const doc = documents.get(params.textDocument.uri);
+    if (!doc) return null;
+    
+    const text = doc.getText();
+    const lines = text.split("\n");
+    let combined = "";
+    
+    for (let i = params.position.line; i >= 0; i--) {
+        const lineText = i === params.position.line
+            ? (lines[i] ?? "").substring(0, params.position.character)
+            : (lines[i] ?? "");
+        combined = lineText + combined;
+        
+        const ctx = getCallContext(combined);
+        if (!ctx) { if (params.position.line - i >= 5) break; continue; }
+        
+        const { funcName, paramIndex } = ctx;
+        
+        // check builtins
+        const builtin = SIGNATURES_DEFS[funcName];
+        if (builtin) {
+            return {
+                signatures: [{
+                    label: builtin.label,
+                    documentation: { kind: MarkupKind.Markdown, value: builtin.doc },
+                    parameters: builtin.params.map(p => ({ label: p } as ParameterInformation)),
+                } as SignatureInformation],
+                activeSignature: 0,
+                activeParameter: Math.min(paramIndex, builtin.params.length - 1),
+            };
+        }
+        
+        // check user-defined
+        const funcDefPattern = new RegExp(`^\\s*(?:static\\s+)?def\\s+${funcName}\\s*\\(([^)]*)\\)`);
+        for (let j = 0; j < lines.length; j++) {
+            const m = funcDefPattern.exec(lines[j]);
+            if (!m) continue;
+            const params2 = m[1].split(",").map(p => p.trim().split(":")[0].trim()).filter(p => p && p !== "self");
+            const label = `${funcName}(${params2.join(", ")})`;
+            return {
+                signatures: [{
+                    label,
+                    documentation: { kind: MarkupKind.Markdown, value: `User-defined function — line ${j + 1}` },
+                    parameters: params2.map(p => ({ label: p } as ParameterInformation)),
+                } as SignatureInformation],
+                activeSignature: 0,
+                activeParameter: Math.min(paramIndex, params2.length - 1),
+            };
+        }
+        
+        return null;
+    }
+    return null;
+});
+
+// Formatting
+function formatText(lines: string[], indentChar: string): string[] {
+    const result: string[] = [];
+    let indentLevel = 0;
+    
+    const increaseAfter = /^(if|elif|else|for|while|def|class|try|except|finally|match|case)\b.*:\s*$/;
+    const decreaseBefore = /^(elif|else|except|finally)\b/;
+    
+    for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
+        
+        if (trimmed === "") { result.push(""); continue; }
+        if (trimmed.startsWith("#")) { result.push(indentChar.repeat(indentLevel) + trimmed); continue; }
+        
+        if (decreaseBefore.test(trimmed) && indentLevel > 0) indentLevel--;
+        result.push(indentChar.repeat(indentLevel) + trimmed);
+        
+        if (increaseAfter.test(trimmed)) {
+            indentLevel++;
+            continue;
+        }
+        
+        const next = lines.slice(i + 1).find(l => l.trim() !== "");
+        if (next !== undefined) {
+            const nextIndent = next.length - next.trimStart().length;
+            const currentExpected = indentLevel * indentChar.length;
+            if (nextIndent < currentExpected && !decreaseBefore.test(next.trim())) {
+                indentLevel = Math.floor(nextIndent / indentChar.length);
+            }
+        }
+    }
+    
+    return result;
+}
+
+connection.onDocumentFormatting((params): TextEdit[] => {
+    const doc = documents.get(params.textDocument.uri);
+    if (!doc) return [];
+    
+    const text = doc.getText();
+    const lines = text.split("\n");
+    const indentChar = params.options.insertSpaces ? " ".repeat(params.options.tabSize) : "\t";
+    const formatted = formatText(lines, indentChar);
+    const lastLine = doc.lineCount - 1;
+    const lastChar = doc.getText().split("\n")[lastLine].length;
+    
+    return [TextEdit.replace(
+        { start: { line: 0, character: 0 }, end: { line: lastLine, character: lastChar } },
+        formatted.join("\n")
+    )];
+});
+
+connection.onDocumentRangeFormatting((params): TextEdit[] => {
+    const doc = documents.get(params.textDocument.uri);
+    if (!doc) return [];
+    
+    const lines = doc.getText().split("\n");
+    const rangeLines = lines.slice(params.range.start.line, params.range.end.line + 1);
+    const indentChar = params.options.insertSpaces ? " ".repeat(params.options.tabSize) : "\t";
+    const firstLine = rangeLines[0];
+    const baseIndent = firstLine.length - firstLine.trimStart().length;
+    const baseLevel = Math.floor(baseIndent / (params.options.tabSize || 4));
+    
+    const formatted = formatText(rangeLines, indentChar);
+    const lastChar = lines[params.range.end.line].length;
+    
+    return [TextEdit.replace(
+        { start: { line: params.range.start.line, character: 0 }, end: { line: params.range.end.line, character: lastChar } },
+        formatted.join("\n")
+    )];
+});
 
 // Listen -------------------------
 documents.listen(connection);
