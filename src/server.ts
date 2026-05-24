@@ -825,9 +825,17 @@ function validateDocument(text: string): Diagnostic[] {
         while ((m = identPattern.exec(cleanedLine)) !== null) {
             const name = m[1];
             const col  = m.index;
+            
             if (keywords.has(name) || builtins.has(name) || defined.has(name)) continue;
+            
+            // skip if preceded by a dot - it's a member access
+            const charBefore = cleanedLine[col - 1];
+            if (charBefore === ".") continue;
+            
+            // skip if it's the left side of an assignment on this line
             const assignLeft = new RegExp(`^\\s*${name}\\s*(?:\\+|-|\\*|\\/)?=`);
             if (assignLeft.test(cleanedLine)) continue;
+            
             diagnostics.push({
                 range: { start: { line: i, character: col }, end: { line: i, character: col + name.length } },
                 message: `Unknown identifier '${name}'`,
