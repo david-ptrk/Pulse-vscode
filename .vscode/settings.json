@@ -3,7 +3,8 @@
         "editor.formatOnSave": true,
         "editor.tabSize": 4,
         "editor.insertSpaces": true,
-        "editor.autoIndent": "keep"
+        "editor.autoIndent": "keep",
+        "editor.inlayHints.enabled": "on"
     },
     "pulse.interpreterPath": "D:\\University\\Final Year Project\\Pulse\\pulse.py"
 }

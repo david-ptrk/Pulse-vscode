@@ -36,6 +36,9 @@ import {
     CodeActionKind,
     CodeActionParams,
     Command,
+    InlayHint,
+    InlayHintKind,
+    InlayHintParams,
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import * as cp from "child_process";
@@ -71,6 +74,9 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
                 workspaceFolders: { supported: true }
             },
             codeActionProvider: true,
+            inlayHintProvider: {
+                resolveProvider: false,
+            },
         },
     };
 });
@@ -835,7 +841,7 @@ function validateDocument(text: string): Diagnostic[] {
             // skip if it's the left side of an assignment on this line
             const assignLeft = new RegExp(`^\\s*${name}\\s*(?:\\+|-|\\*|\\/)?=`);
             if (assignLeft.test(cleanedLine)) continue;
-            
+
             diagnostics.push({
                 range: { start: { line: i, character: col }, end: { line: i, character: col + name.length } },
                 message: `Unknown identifier '${name}'`,
@@ -1430,6 +1436,74 @@ connection.onCodeAction((params: CodeActionParams): CodeAction[] => {
     }
     
     return actions;
+});
+
+// Inlay Hints
+function inferTypeFromValue(value: string): string | null {
+    const v = value.trim();
+    
+    if (/^-?\d+\.\d+([eE][+-]?\d+)?$/.test(v)) return "float";
+    if (/^-?\d+([eE]\d+)?$/.test(v)) return "int";
+    if (/^(True|False)$/.test(v)) return "bool";
+    if (/^(null|None)$/.test(v)) return "null";
+    if (/^NaN$/.test(v)) return "float";
+    if (/^f?["']/.test(v)) return "str";
+    if (/^\[/.test(v)) return "list";
+    if (/^\{/.test(v)) return "dict";
+    if (/^\(/.test(v)) return "tuple";
+    if (/^lambda\b/.test(v)) return "function";
+    
+    return null;
+}
+
+connection.languages.inlayHint.on((params: InlayHintParams): InlayHint[] => {
+    const doc = documents.get(params.textDocument.uri);
+    if (!doc) return [];
+    
+    const text = doc.getText();
+    const lines = text.split("\n");
+    const hints: InlayHint[] = [];
+    
+    // match: varname = value (not ==, +=, -=, etc.)
+    const assignPattern = /^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*=(?![=>])\s*(.+)$/;
+    
+    const skip = new Set([
+        "if", "elif", "else", "while", "for", "return", "and", "or",
+        "not", "in", "is", "def", "class", "import", "from", "self",
+    ]);
+    
+    for (let i = 0; i < lines.length; i++) {
+        // only look at lines within the requested range
+        if (i < params.range.start.line || i > params.range.end.line) continue;
+        
+        const line = lines[i];
+        const stripped = line.replace(/#.*$/, "").trimEnd();
+        if (!stripped) continue;
+        
+        const match = assignPattern.exec(stripped);
+        if (!match) continue;
+        
+        const varName = match[1];
+        const value = match[2].trim();
+        
+        if (skip.has(varName)) continue;
+        
+        const type = inferTypeFromValue(value);
+        if (!type) continue;
+        
+        // place hint right after the variable name
+        const col = line.indexOf(varName) + varName.length;
+        
+        hints.push({
+            position: { line: i, character: col },
+            label: `: ${type}`,
+            kind: InlayHintKind.Type,
+            paddingLeft: false,
+            paddingRight: true,
+        });
+    }
+    
+    return hints;
 });
 
 // Listen -------------------------
